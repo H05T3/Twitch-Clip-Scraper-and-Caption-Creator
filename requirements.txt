@@ -1,0 +1,11 @@
+# Backend
+python-dotenv>=1.0
+requests>=2.31
+yt-dlp>=2024.8.6
+openai>=1.40
+# Front end
+customtkinter>=5.2
+pillow>=10.0
+opencv-python>=4.8
+# Tests
+pytest>=8.0

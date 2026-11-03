@@ -1,0 +1,15 @@
+# Secrets - NEVER commit the real .env (the API keys live there)
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# Generated at runtime
+APP/Workspace/
+APP/settings.json
+APP/SavedClips/*.mp4
+APP/SavedClips/*.json
