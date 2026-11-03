@@ -129,7 +129,7 @@ def probe(path, entries):
                           f"stream={entries}", "-of", "csv=p=0", str(path)], capture_output=True, text=True)
     return out.stdout.strip()
 
-
+#This part isn't working gangy
 def test_render_produces_portrait_video(settings, sample_clip, tmp_path):
     out = VideoProcessor(settings).render(sample_clip, make_analysis(settings), tmp_path / "out" / "r.mp4")
     assert probe(out, "width,height") == f"{settings.output_width},{settings.output_height}"
