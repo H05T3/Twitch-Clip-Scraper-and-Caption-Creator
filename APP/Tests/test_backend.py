@@ -1,6 +1,5 @@
 """Backend tests. Network services are faked; ffmpeg rendering is run for real."""
 import json
-import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -8,6 +7,7 @@ import pytest
 
 from APP.BackEnd.analysis_models import ClipAnalysis, ProcessedClip, ZoomRegion
 from APP.BackEnd.errors import ClipperError, TwitchServiceError
+from APP.BackEnd.ffmpeg_runner import FfmpegRunner
 from APP.BackEnd.models import ClipInfo, WordTiming
 from APP.BackEnd.pipeline import ClipPipeline
 from APP.BackEnd.storage_service import ClipLibrary, SettingsStore
@@ -108,11 +108,13 @@ def test_zoom_regions_never_overlap():
 
 # ---------- Real ffmpeg render ----------
 @pytest.fixture
-def sample_clip(tmp_path):
+def sample_clip(tmp_path, settings):
     path = tmp_path / "src.mp4"
-    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=30:duration=6",
-                    "-f", "lavfi", "-i", "sine=frequency=440:duration=6", "-c:v", "libx264", "-pix_fmt", "yuv420p",
-                    "-c:a", "aac", "-shortest", str(path)], check=True, capture_output=True)
+    result = FfmpegRunner(settings).run([
+        "-y", "-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=30:duration=6",
+        "-f", "lavfi", "-i", "sine=frequency=440:duration=6", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-shortest", path])
+    assert result.returncode == 0, result.stderr[-300:]
     return path
 
 
@@ -124,19 +126,17 @@ def make_analysis(settings):
                         zoom_regions=[ZoomRegion(1.0, 2.5, 0.25, 0.3, 1.5), ZoomRegion(3.0, 4.5, 0.8, 0.6, 1.3)])
 
 
-def probe(path, entries):
-    out = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
-                          f"stream={entries}", "-of", "csv=p=0", str(path)], capture_output=True, text=True)
-    return out.stdout.strip()
+def describe(settings, path):
+    """ffmpeg's own description of a file (works without ffprobe, which pip's ffmpeg doesn't include)."""
+    return FfmpegRunner(settings).run(["-hide_banner", "-i", path]).stderr
 
-#This part isn't working gangy
+
 def test_render_produces_portrait_video(settings, sample_clip, tmp_path):
     out = VideoProcessor(settings).render(sample_clip, make_analysis(settings), tmp_path / "out" / "r.mp4")
-    assert probe(out, "width,height") == f"{settings.output_width},{settings.output_height}"
+    info = describe(settings, out)
+    assert f"{settings.output_width}x{settings.output_height}" in info
+    assert "Audio: aac" in info
     assert not list(out.parent.glob("*.ass"))  # temp caption file cleaned up
-    audio = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries", "stream=codec_name",
-                            "-of", "csv=p=0", str(out)], capture_output=True, text=True).stdout
-    assert "aac" in audio
 
 
 def test_render_without_zoom_or_subtitles(settings, sample_clip, tmp_path):
@@ -196,3 +196,21 @@ def test_pipeline_end_to_end_with_fakes(settings, sample_clip):
     pipe.clear_workspace()
     assert not results[0].video_path.exists()
     assert pipe.library.stats()["clips_created"] == 1
+
+
+# ---------- ffmpeg lookup (regression: WinError 2 when ffmpeg is missing) ----------
+def test_missing_ffmpeg_gives_friendly_error(settings):
+    import dataclasses
+    from APP.BackEnd.errors import ProcessingError
+    from APP.BackEnd.ffmpeg_runner import FfmpegRunner
+    missing = dataclasses.replace(settings, ffmpeg_binary="definitely-not-ffmpeg")
+    with pytest.raises(ProcessingError, match="ffmpeg was not found"):
+        FfmpegRunner(missing, allow_bundled=False).run(["-version"])
+
+
+def test_ffmpeg_falls_back_to_bundled_copy(settings):
+    import dataclasses
+    from APP.BackEnd.ffmpeg_runner import FfmpegRunner
+    missing = dataclasses.replace(settings, ffmpeg_binary="definitely-not-ffmpeg")
+    result = FfmpegRunner(missing).run(["-version"])  # uses imageio-ffmpeg
+    assert result.returncode == 0 and "ffmpeg version" in result.stdout.lower()
