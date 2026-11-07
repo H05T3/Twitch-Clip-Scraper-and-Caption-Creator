@@ -6,6 +6,7 @@ openai>=1.40
 # Front end
 customtkinter>=5.2
 pillow>=10.0
+imageio-ffmpeg>=0.4.9   # bundled ffmpeg fallback if ffmpeg is not on PATH
 opencv-python>=4.8
 # Tests
 pytest>=8.0

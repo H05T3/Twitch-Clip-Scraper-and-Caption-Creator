@@ -1,11 +1,11 @@
 """Audio extraction, OpenAI Whisper transcription and GPT clip analysis."""
 import json
-import subprocess
 from pathlib import Path
 
 from APP.BackEnd.analysis_models import ClipAnalysis, ZoomRegion
 from APP.BackEnd.config import Settings
 from APP.BackEnd.errors import ProcessingError
+from APP.BackEnd.ffmpeg_runner import FfmpegRunner
 from APP.BackEnd.models import ClipInfo, WordTiming
 from APP.BackEnd.subtitle_builder import SubtitleLineBuilder
 
@@ -28,18 +28,18 @@ class AudioExtractor:
     """Single responsibility: pull the audio track out of a video file with ffmpeg
     (mono, low bitrate - small enough for the Whisper upload limit)."""
 
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, runner: FfmpegRunner = None):
         self.settings = settings
+        self.runner = runner or FfmpegRunner(settings)
 
     def extract(self, video_path: Path, output_dir: Path) -> Path:
         output_dir.mkdir(parents=True, exist_ok=True)
         audio_path = output_dir / f"{video_path.stem}.{self.settings.audio_format}"
-        command = [
-            self.settings.ffmpeg_binary, "-y", "-i", str(video_path), "-vn", "-ac", "1",
-            "-ar", str(self.settings.audio_sample_rate),
-            "-b:a", self.settings.audio_bitrate_extract, str(audio_path),
-        ]
-        result = subprocess.run(command, capture_output=True, text=True)
+        result = self.runner.run([
+            "-y", "-i", video_path, "-vn", "-ac", "1",
+            "-ar", self.settings.audio_sample_rate,
+            "-b:a", self.settings.audio_bitrate_extract, audio_path,
+        ])
         if result.returncode != 0:
             raise ProcessingError(f"Audio extraction failed: {result.stderr[-500:]}")
         return audio_path

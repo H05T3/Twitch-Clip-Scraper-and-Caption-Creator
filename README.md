@@ -18,6 +18,12 @@ python -m APP.main
 ```
 On Linux you may also need tkinter: `sudo apt install python3-tk`.
 
+**ffmpeg:** `pip install -r requirements.txt` includes `imageio-ffmpeg`, so the app works even if ffmpeg is not installed on your PC.
+It looks for ffmpeg in this order: `FFMPEG_BINARY` in `.env` (full path) -> your PATH -> the bundled copy.
+
+**Run everything from the project folder** (the one containing `APP/` and `README.md`), always as a module:
+`python -m APP.main` / `python -m pytest`. Do not run files inside `APP/` directly (e.g. `python conftest.py`) - that causes `No module named 'APP'`.
+
 ## Command line (same backend, no window)
 ```
 python -m APP.BackEnd.cli fetch https://www.twitch.tv/somestreamer

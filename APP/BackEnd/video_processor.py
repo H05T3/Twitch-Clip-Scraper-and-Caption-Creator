@@ -1,13 +1,13 @@
 """Renders the 9:16 portrait video: blurred background, centred clip, zoom punch-ins,
 title banner and subtitles - all in one ffmpeg pass."""
 import re
-import subprocess
 from pathlib import Path
 
 from APP.BackEnd.analysis_models import ClipAnalysis, ZoomRegion
 from APP.BackEnd.caption_file_builder import CaptionFileBuilder
 from APP.BackEnd.config import Settings
 from APP.BackEnd.errors import ProcessingError
+from APP.BackEnd.ffmpeg_runner import FfmpegRunner
 
 # Name of the temporary caption file written next to the output (deleted afterwards).
 CAPTION_FILE_SUFFIX = ".captions.ass"
@@ -74,8 +74,9 @@ class VideoProcessor:
     (1080x1920 by default) from a downloaded clip and its ClipAnalysis."""
 
     def __init__(self, settings: Settings, caption_builder: CaptionFileBuilder = None,
-                 graph_builder: FilterGraphBuilder = None):
+                 graph_builder: FilterGraphBuilder = None, runner: FfmpegRunner = None):
         self.settings = settings
+        self.runner = runner or FfmpegRunner(settings)
         self.caption_builder = caption_builder or CaptionFileBuilder(settings)
         self.graph_builder = graph_builder or FilterGraphBuilder(settings)
 
@@ -87,15 +88,15 @@ class VideoProcessor:
         caption_path = output_path.parent / f"{safe_stem}{CAPTION_FILE_SUFFIX}"
         self.caption_builder.write(analysis, caption_path)
         graph = self.graph_builder.build(caption_path.name, analysis.zoom_regions)
-        command = [
-            s.ffmpeg_binary, "-y", "-i", str(Path(source).resolve()),
+        arguments = [
+            "-y", "-i", str(Path(source).resolve()),
             "-filter_complex", graph, "-map", "[vout]", "-map", "0:a?",
             "-c:v", s.video_codec, "-crf", str(s.video_crf), "-preset", s.video_preset,
             "-pix_fmt", s.pixel_format, "-c:a", s.audio_codec, "-b:a", s.audio_bitrate,
             "-movflags", "+faststart", str(output_path),
         ]
         # cwd = caption file folder so the ass filter gets a plain file name (no path escaping).
-        result = subprocess.run(command, capture_output=True, text=True, cwd=output_path.parent)
+        result = self.runner.run(arguments, cwd=output_path.parent)
         caption_path.unlink(missing_ok=True)
         if result.returncode != 0:
             raise ProcessingError(f"ffmpeg failed: {result.stderr[-ERROR_TAIL_CHARS:]}")
